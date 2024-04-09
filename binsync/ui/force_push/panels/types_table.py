@@ -18,7 +18,7 @@ from libbs.ui.qt_objects import (
 l = logging.getLogger(__name__)
 
 
-class GlobalTableModel(BinsyncTableModel):
+class TypeTableModel(BinsyncTableModel):
     update_signal = Signal(list)
     def __init__(self, controller: BSController, col_headers=None, filter_cols=None, time_col=None,
                  addr_col=None, parent=None):
@@ -41,23 +41,22 @@ class GlobalTableModel(BinsyncTableModel):
 
         if role == Qt.DisplayRole:
             if col == 0:
-                return f"{self.row_data[index.row()][0]:#x}"
+                return self.row_data[index.row()][0]
             elif col == 1:
-                return self.row_data[row][col]
-            elif col == 2:
                 return self.row_data[row][col]
         elif role == self.SortRole:
             return self.row_data[row][col]
         elif role == self.FilterRole:
-            return f"{hex(self.row_data[row][0])} {self.row_data[row][1]}"
+            return str(self.row_data[row][0])
         elif role == Qt.CheckStateRole and index.column() == 0:
             return self.checkState(index)
+        
         return None
 
     def setAllCheckStates(self, val):
         for k in self.checks.keys():
             self.checks[k] = val
-            
+        
         self.dataChanged.emit(self.index(0, 0), self.index(self.rowCount() - 1, 0))
 
 
@@ -79,18 +78,21 @@ class GlobalTableModel(BinsyncTableModel):
         
         self.dataChanged.emit(index, index)
         return True
+    
+
 
     def update_table(self):
+        decompiler_structs = self.controller.deci.structs
+        decompiler_enums = self.controller.deci.enums
         changed_indices = set()
-        decompiler_gvars = self.controller.deci.global_vars
 
-        self.gvar_name_to_addr_map = {gvar.name: addr for addr, gvar in decompiler_gvars.items()}
-        all_artifacts = [(decompiler_gvars, "Variable")]
+        all_artifacts = [(decompiler_structs, "Struct"), (decompiler_enums, "Enum")]
+
         for type_artifacts, type_ in all_artifacts:
             for idx, artifact in enumerate(type_artifacts.values()):
-                    self.data_dict[artifact.addr] = [artifact.addr, artifact.name, type_]
-                    self.checks[artifact.addr] = False
-                    changed_indices.add(idx)
+                self.data_dict[artifact.name] = [artifact.name, type_]
+                self.checks[artifact.name] = False
+                changed_indices.add(idx)
 
         if len(changed_indices) == 0:
             return
@@ -101,6 +103,7 @@ class GlobalTableModel(BinsyncTableModel):
         # ask for in-row updates (in UI) to any single row changed
         for update_idx in changed_indices:
             self.dataChanged.emit(self.index(0, update_idx), self.index(self.rowCount() - 1, update_idx))
+
 
     @Slot(list)
     def update_data(self, new_data):
@@ -123,20 +126,20 @@ class GlobalTableModel(BinsyncTableModel):
         """ Set the item flags at the given index. """
         if not index.isValid():
             return Qt.ItemIsEnabled
+        
         if index.column() == 0:
             return Qt.ItemIsUserCheckable | Qt.ItemIsSelectable | Qt.ItemIsEnabled
         else:
             return Qt.ItemFlags(QAbstractTableModel.flags(self, index))
 
-class GlobalsTableView(BinsyncTableView):
-    HEADER = ['Addr', 'Name', 'Type']
+class TypesTableView(BinsyncTableView):
+    HEADER = ['Name', 'Type']
 
     def __init__(self, controller: BSController, filteredit: BinsyncTableFilterLineEdit, stretch_col=None,
                  col_count=None, parent=None):
         super().__init__(controller, filteredit, stretch_col, col_count, parent)
 
-        self.model = GlobalTableModel(controller, self.HEADER, filter_cols=[0, 1], addr_col=0,
-                                        parent=parent)
+        self.model = TypeTableModel(controller, self.HEADER, filter_cols=[0], parent=parent)
         self.proxymodel.setSourceModel(self.model)
         self.setModel(self.proxymodel)
 
@@ -145,9 +148,6 @@ class GlobalsTableView(BinsyncTableView):
 
     def update_table(self):
         self.model.update_table()
-
-    def _lookup_addr_for_gvar(self, name):
-        return self.model.gvar_name_to_addr_map[name]
 
     def push(self):
         artifacts_to_push = []
@@ -163,8 +163,10 @@ class GlobalsTableView(BinsyncTableView):
             model_state = self.model.checkState(mappedIndex)
             is_checked = model_state.value if check_has_value else model_state
             if is_checked:
-                name = self.model.data(mappedIndex.sibling(mappedIndex.row(), 1))
-                lookup_item = self._lookup_addr_for_gvar(name)
+                type_ = self.model.data(mappedIndex)
+                name = self.model.data(mappedIndex.sibling(mappedIndex.row(), 0))
+                lookup_item = name
+
                 artifacts_to_push.append(lookup_item)
 
         self.controller.force_push_global_artifacts(artifacts_to_push)
@@ -184,7 +186,7 @@ class GlobalsTableView(BinsyncTableView):
 
         self.model.setData(tls_row_idx, not self.model.checkStateBool(tls_row_idx), role=Qt.CheckStateRole)
 
-class QGlobalsTable(QWidget):
+class QTypesTable(QWidget):
     """ Wrapper widget to contain the function table classes in one file (prevents bulking up control_panel.py) """
 
     def __init__(self, controller: BSController, parent=None):
@@ -200,7 +202,7 @@ class QGlobalsTable(QWidget):
 
     def _init_widgets(self):
         self.filteredit = BinsyncTableFilterLineEdit(parent=self)
-        self.table = GlobalsTableView(self.controller, self.filteredit, stretch_col=1, col_count=3)
+        self.table = TypesTableView(self.controller, self.filteredit, stretch_col=1, col_count=2)
         layout = QVBoxLayout()
         layout.setSpacing(0)
         layout.setContentsMargins(0, 0, 0, 0)

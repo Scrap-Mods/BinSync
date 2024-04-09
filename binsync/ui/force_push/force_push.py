@@ -2,6 +2,7 @@ import logging
 
 from binsync.ui.force_push.panels.functions_table import QFunctionTable
 from binsync.ui.force_push.panels.globals_table import QGlobalsTable
+from binsync.ui.force_push.panels.types_table import QTypesTable
 from libbs.api.utils import progress_bar
 from libbs.ui.qt_objects import (
     QTabWidget,
@@ -30,13 +31,16 @@ class ForcePushUI(QWidget):
         # add panel_tabs to tabs
         self._func_table = QFunctionTable(self.controller)
         self._global_table = QGlobalsTable(self.controller)
+        self._types_table = QTypesTable(self.controller)
 
         self.tabView.addTab(self._func_table, "Functions")
         self.tabView.addTab(self._global_table, "Globals")
+        self.tabView.addTab(self._types_table, "Types")
 
         self.tables.update({
             "functions": self._func_table,
-            "globals": self._global_table
+            "globals": self._global_table,
+            "types": self._types_table
         })
 
         main_layout = QVBoxLayout()
